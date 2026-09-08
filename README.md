@@ -117,7 +117,7 @@ src/adapters/
   claude.js / gemini.js  Claude Code / Gemini CLI
   workbuddy.js           WorkBuddy default connector profile（只读）
   stubs.js               CodeBuddy 探测适配器
-tests/                   node --test 单元测试（54 个，含三平台 fixture）
+tests/                   node --test 单元测试（58 个，含三平台 fixture）
 ```
 
 **加新工具只需一份 spec**（同构 JSON 家族约 20 行）：

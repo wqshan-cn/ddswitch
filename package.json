@@ -1,0 +1,90 @@
+{
+  "name": "ddswitch",
+  "version": "0.1.0",
+  "description": "跨平台 AI 编程工具统一管理器：扫描、诊断、MCP 同步、Skills 盘点与部署",
+  "author": "ddswitch contributors",
+  "type": "module",
+  "bin": {
+    "ddswitch": "bin/ddswitch.js",
+    "agenthub": "bin/ddswitch.js"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "electron/",
+    "README.md",
+    "LICENSE"
+  ],
+  "main": "electron/main.cjs",
+  "scripts": {
+    "test": "node --test tests/",
+    "test:ci": "node --test tests/",
+    "pack:check": "npm pack --dry-run",
+    "prepack": "npm test",
+    "start": "electron .",
+    "desktop": "electron .",
+    "dist:win": "electron-builder --win nsis portable",
+    "dist:dir": "electron-builder --dir",
+    "ddswitch": "node bin/ddswitch.js",
+    "agenthub": "node bin/ddswitch.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wqshan-cn/ddswitch.git"
+  },
+  "bugs": {
+    "url": "https://github.com/wqshan-cn/ddswitch/issues"
+  },
+  "homepage": "https://github.com/wqshan-cn/ddswitch",
+  "keywords": [
+    "ai-agents",
+    "mcp",
+    "model-context-protocol",
+    "agent-skills",
+    "claude-code",
+    "codex",
+    "zcode",
+    "workbuddy"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "build": {
+    "appId": "com.ddswitch.desktop",
+    "productName": "DDSwitch",
+    "asar": true,
+    "files": [
+      "electron/**/*",
+      "src/**/*",
+      "bin/**/*",
+      "package.json",
+      "README.md",
+      "LICENSE"
+    ],
+    "directories": {
+      "output": "dist-desktop"
+    },
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ]
+    },
+    "nsis": {
+      "artifactName": "DDSwitch-${version}-Setup-${arch}.${ext}",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "DDSwitch"
+    },
+    "portable": {
+      "artifactName": "DDSwitch-${version}-Portable-${arch}.${ext}"
+    }
+  },
+  "devDependencies": {
+    "electron": "^44.2.0",
+    "electron-builder": "^26.15.3"
+  }
+}

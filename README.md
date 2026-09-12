@@ -81,9 +81,19 @@ ddswitch usage export --range 30d --out usage.json       # 安全字段导出
 | 来源 | 粒度 | 数据源 | 状态 |
 |---|---|---|---|
 | ZCode | request-level | `~/.zcode/cli/db/db.sqlite` 的 `model_usage` | 支持输入/输出/reasoning/cache、模型、provider、耗时、失败数 |
-| Codex | thread-level | `~/.codex/state_5.sqlite` 的 `threads` | 只有 thread 总量，界面会明确标注粒度 |
+| Codex | request-level（JSONL） | `~/.codex/sessions/**/rollout-*.jsonl` 的 `token_count` 事件（`last_token_usage` 增量） | 无 JSONL 数据时回退 `state_5.sqlite` threads 的 thread 级估算 |
 | Claude Code | - | 暂无可靠结构化 usage 源 | 不猜测、不读取 `.claude/profiles/.history` |
 | WorkBuddy | - | 不读取 SQLite/connector 状态层 | 保持只读 |
+
+**Input 语义**（借鉴 CC Switch 的 SSOT 归一）：Anthropic 系上报的 input 不含缓存（fresh），OpenAI/Gemini 系包含（total）。Codex JSONL 记录标注 `total` 并同时计算 fresh 值；ZCode 背后既有 GLM 又有 OpenAI 系中转，标注 `unknown`，UI 显示语义警告，跨模型直接对比需注意。
+
+**成本估算**（借鉴 CC Switch `model-pricing.json`）：默认不内置价格（中转价与官方价差异大，猜测会产生误导性账单）。在 `~/.ddswitch/model-pricing.json` 配置每百万 token 单价后，summary/页面会显示估算成本：
+
+```json
+{ "version": 1, "models": [ { "modelId": "glm-5.3-flash",
+  "inputCostPerMillion": "0.5", "outputCostPerMillion": "2",
+  "cacheReadCostPerMillion": "0.1", "cacheCreationCostPerMillion": "0" } ] }
+```
 
 聚合规则：成功请求计入消耗；`provider_total_tokens` 优先于 `computed_total_tokens`，不会相加；重复的 `logical_request_id + attempt_index` 去重；缺失值保持未知，不强制变成 0。统计不是官方账单。
 

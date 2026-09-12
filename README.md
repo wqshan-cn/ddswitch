@@ -70,9 +70,32 @@ node bin/ddswitch.js skills deploy --from zcode --to claude --write  # 跨工具
 ddswitch usage summary --range 7d                         # Token 汇总
 ddswitch usage breakdown --range 30d                      # 按来源/模型分组
 ddswitch usage export --range 30d --out usage.json       # 安全字段导出
+ddswitch provider list                                    # 供应商盘点
+ddswitch provider capture claude --name 官方登录          # 捕获当前供应商为可回滚 profile
+ddswitch provider switch claude <profileId> --write      # 切换（自动回填旧配置手改）
 ```
 
 同步是**跨阵营**的：Qoder → ZCode、Qoder → Claude、Claude → Kimi……任意方向组合都走同一条命令。
+
+## 供应商切换（Provider 切换与回滚）
+
+借鉴 CC Switch 的 provider 架构：`~/.ddswitch/providers.json` 是 SSOT，各工具 live 配置是投影。
+
+```bash
+ddswitch provider capture claude --name 官方登录   # 1. 捕获当前配置（捕获即标记为生效中）
+ddswitch provider switch claude <profileId> --write # 2. 切换：先回填旧配置手改，再写新配置
+ddswitch provider switch claude <旧profileId> --write # 3. 一条命令回滚
+```
+
+- **回填保护**：切换前读取 live，若用户手动改过则把改动归档到旧 profile（`backfilledAt`），不丢失手改
+- **受管键隔离**：只动本 adapter 的键（Claude 的 `ANTHROPIC_*` env、Codex 的 `model_provider`/`[model_providers.*]`/`model`），其他键外科保留
+- **生效中的 profile 不可删除**（保证永远有回滚点）
+
+| 工具 | 状态 | 说明 |
+|---|---|---|
+| Claude Code | ✔ 切换/回填 | `~/.claude/settings.json` 的 `ANTHROPIC_*` env（官方登录时捕获为空 env） |
+| Codex | ✔ 切换/回填 | `config.toml` 的 `model_provider` 指针 + `[model_providers.*]` 段 + 顶层 `model`（本机当前为 ChatGPT 登录无可捕获配置） |
+| ZCode | 盘点/快照只读 | `v2/config.json` 的 provider map + kind（anthropic/openai-compatible）+ enabled 已可盘点；**激活语义含 family/mode**（`setting.json` 的 `modelProviderFamilySelectedKeys` 带 `coding-plan:` 前缀），未确认前禁写 |
 
 ## Token 用量统计
 

@@ -195,21 +195,29 @@ export function scanSegments(text) {
 
 /** 读取 [mcp_servers.*]：返回 [{name, raw}]（env 子表合并进 raw.env）。 */
 export function readMcpServers(text) {
+  return readNamedTable(text, 'mcp_servers', ['env']);
+}
+
+/**
+ * 通用命名表读取：读取 [root.<name>] 段及其直接子表（subKeys 列出的），
+ * 子表内容合并进 raw.<subKey>。用于 mcp_servers 与 model_providers。
+ */
+export function readNamedTable(text, rootKey, subKeys = []) {
   const { lines, segments } = scanSegments(text);
   const order = [];
-  const servers = new Map();
+  const tables = new Map();
   for (const seg of segments) {
     const p = seg.namePath;
-    if (p[0] !== 'mcp_servers' || p.length < 2) continue;
+    if (p[0] !== rootKey || p.length < 2) continue;
     const name = p[1];
-    if (!servers.has(name)) { servers.set(name, {}); order.push(name); }
-    const raw = servers.get(name);
+    if (!tables.has(name)) { tables.set(name, {}); order.push(name); }
+    const raw = tables.get(name);
     const body = lines.slice(seg.start + 1, seg.end);
     if (p.length === 2) Object.assign(raw, parseKeyValues(body));
-    else if (p.length === 3 && p[2] === 'env') raw.env = { ...(raw.env || {}), ...parseKeyValues(body) };
+    else if (p.length === 3 && subKeys.includes(p[2])) raw[p[2]] = { ...(raw[p[2]] || {}), ...parseKeyValues(body) };
     // 更深的路径（不认识的子表）忽略
   }
-  return order.map((name) => ({ name, raw: servers.get(name) }));
+  return order.map((name) => ({ name, raw: tables.get(name) }));
 }
 
 function tomlKey(k) {
@@ -234,68 +242,72 @@ function encodeValue(v, fieldPath) {
   throw new Error(`Codex TOML 无法编码字段 ${fieldPath}（类型 ${v === null ? 'null' : typeof v}）`);
 }
 
-/** 生成一个 server 的段行（含可能的 [....env] 子表段），学 Codex 自己的排版。 */
-export function renderServerSegments(name, raw) {
+/** 生成 [root.<name>] 段行（env 作为子表段），学 Codex 自己的排版。 */
+export function renderNamedSegments(rootKey, name, raw, envSubKey = 'env') {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    throw new Error(`Codex MCP ${name} 的定义必须是对象`);
+    throw new Error(`TOML ${rootKey}.${name} 的定义必须是对象`);
   }
   const key = tomlKey(name);
-  const lines = [`[mcp_servers.${key}]`];
+  const lines = [`[${rootKey}.${key}]`];
   const rest = { ...raw };
   if ('command' in rest) {
-    if (typeof rest.command !== 'string') throw new Error(`Codex TOML 字段 ${name}.command 必须是字符串`);
+    if (typeof rest.command !== 'string') throw new Error(`TOML 字段 ${name}.command 必须是字符串`);
     lines.push(`command = ${tomlString(rest.command)}`);
     delete rest.command;
   }
   if ('args' in rest) {
     if (!Array.isArray(rest.args) || !rest.args.every((x) => typeof x === 'string')) {
-      throw new Error(`Codex TOML 字段 ${name}.args 必须是字符串数组`);
+      throw new Error(`TOML 字段 ${name}.args 必须是字符串数组`);
     }
     lines.push(`args = ${encodeValue(rest.args, `${name}.args`)}`);
     delete rest.args;
   }
   if ('url' in rest) {
-    if (typeof rest.url !== 'string') throw new Error(`Codex TOML 字段 ${name}.url 必须是字符串`);
+    if (typeof rest.url !== 'string') throw new Error(`TOML 字段 ${name}.url 必须是字符串`);
     lines.push(`url = ${tomlString(rest.url)}`);
     delete rest.url;
   }
   let env = null;
-  if ('env' in rest) {
-    if (!rest.env || typeof rest.env !== 'object' || Array.isArray(rest.env)) {
-      throw new Error(`Codex TOML 字段 ${name}.env 必须是对象`);
+  if (envSubKey in rest) {
+    if (!rest[envSubKey] || typeof rest[envSubKey] !== 'object' || Array.isArray(rest[envSubKey])) {
+      throw new Error(`TOML 字段 ${name}.${envSubKey} 必须是对象`);
     }
-    env = rest.env;
-    delete rest.env;
+    env = rest[envSubKey];
+    delete rest[envSubKey];
   }
   for (const [k, v] of Object.entries(rest)) {
     lines.push(`${tomlKey(k)} = ${encodeValue(v, `${name}.${k}`)}`);
   }
   if (env) {
     lines.push('');
-    lines.push(`[mcp_servers.${key}.env]`);
+    lines.push(`[${rootKey}.${key}.${envSubKey}]`);
     for (const [k, v] of Object.entries(env)) {
       if (!['string', 'number', 'boolean'].includes(typeof v) || (typeof v === 'number' && !Number.isFinite(v))) {
-        throw new Error(`Codex TOML 字段 ${name}.env.${k} 必须是字符串、数字或布尔值`);
+        throw new Error(`TOML 字段 ${name}.${envSubKey}.${k} 必须是字符串、数字或布尔值`);
       }
-      lines.push(`${tomlKey(k)} = ${encodeValue(v, `${name}.env.${k}`)}`);
+      lines.push(`${tomlKey(k)} = ${encodeValue(v, `${name}.${envSubKey}.${k}`)}`);
     }
   }
   return lines;
 }
 
+/** 生成一个 mcp server 的段行（兼容旧接口）。 */
+export function renderServerSegments(name, raw) {
+  return renderNamedSegments('mcp_servers', name, raw, 'env');
+}
+
 /**
- * 段级 upsert/删除：
- * - raw 为对象：替换该 server 的所有段（含 .env 子表）为新生成的段；不存在则追加到文件末尾
- * - raw 为 null：删除该 server 的所有段
- * 返回 { text, changed }。
+ * 通用段级 upsert/删除（rootKey 如 'mcp_servers' / 'model_providers'）。
+ * raw 为对象：替换该命名实体的所有段；不存在则追加到文件末尾。
+ * raw 为 null：删除该命名实体的所有段。
  */
-export function upsertServerSegment(text, name, raw) {
+export function upsertNamedSegment(text, rootKey, name, raw, envSubKey = 'env') {
   const { lines, segments, eol } = scanSegments(text);
-  const owned = segments.filter((s) => s.namePath[0] === 'mcp_servers' && s.namePath[1] === name);
+  const owned = segments.filter((s) => s.namePath[0] === rootKey && s.namePath[1] === name);
 
   if (!owned.length) {
     if (raw === null) return { text, changed: false };
-    const newLines = renderServerSegments(name, raw);
+    const newLines = renderNamedSegments(rootKey, name, raw, envSubKey);
     const base = lines.slice();
     if (base.length && base[base.length - 1].trim() !== '') base.push('');
     return { text: base.concat(newLines).join(eol), changed: true };
@@ -304,7 +316,7 @@ export function upsertServerSegment(text, name, raw) {
   // 在原始坐标上逐段处理：保留同名 base/env 段之间夹着的所有无关 TOML 段。
   // 更新时只在 base 段（没有 base 则第一个 owned 段）位置插入一次新定义。
   const insertAt = (owned.find((s) => s.namePath.length === 2) || owned[0]).start;
-  const replacement = raw === null ? [] : renderServerSegments(name, raw);
+  const replacement = raw === null ? [] : renderNamedSegments(rootKey, name, raw, envSubKey);
   const ordered = [...owned].sort((a, b) => a.start - b.start);
   const out = [];
   let cursor = 0;
@@ -314,5 +326,40 @@ export function upsertServerSegment(text, name, raw) {
     cursor = seg.end;
   }
   out.push(...lines.slice(cursor));
+  return { text: out.join(eol), changed: true };
+}
+
+/** mcp server 的段级 upsert/删除（兼容旧接口）。 */
+export function upsertServerSegment(text, name, raw) {
+  return upsertNamedSegment(text, 'mcp_servers', name, raw, 'env');
+}
+
+/** 读顶层简单键（key = value 行），供 model_provider 指针等使用。 */
+export function readTopLevelKey(text, key) {
+  const { lines } = scanSegments(text);
+  const re = new RegExp(`^\\s*${key}\\s*=\\s*(.*)$`);
+  for (const line of lines) {
+    const m = stripTrailingComment(line).match(re);
+    if (m) return parseTomlValue(m[1].trim());
+  }
+  return undefined;
+}
+
+/** 写/更新顶层简单键；已存在则原地替换该行，不存在则插到第一个段头之前（或文件头）。 */
+export function upsertTopLevelKey(text, key, value) {
+  const { lines, segments, eol } = scanSegments(text);
+  const newLine = `${key} = ${encodeValue(value, key)}`;
+  const firstSegmentStart = segments.length ? segments[0].start : lines.length;
+  for (let i = 0; i < lines.length; i++) {
+    if (i >= firstSegmentStart) break;
+    if (new RegExp(`^\\s*${key}\\s*=`).test(lines[i])) {
+      const out = lines.slice();
+      out[i] = newLine;
+      return { text: out.join(eol), changed: out[i] !== lines[i] };
+    }
+  }
+  const insertAt = firstSegmentStart;
+  const withBlank = insertAt > 0 && lines[insertAt - 1]?.trim() !== '' ? ['', newLine] : [newLine];
+  const out = lines.slice(0, insertAt).concat(withBlank, lines.slice(insertAt));
   return { text: out.join(eol), changed: true };
 }

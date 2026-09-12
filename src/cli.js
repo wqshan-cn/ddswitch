@@ -5,6 +5,7 @@ import { entryId, summarize, redactMcpDefinition } from './model.js';
 import { dirExists, fileExists, readJsonLoose, atomicWriteJson, isRecord } from './jsonutil.js';
 import { listSkillsDir, deploySkills } from './skills.js';
 import { readUsage } from './usage-readers.js';
+import { listProviders, captureProfile, switchProvider, removeProfile } from './providers.js';
 
 const HELP = `ddswitch — AI 编程工具统一管理器（通用，国产与海外主流通吃）
 
@@ -31,7 +32,15 @@ const HELP = `ddswitch — AI 编程工具统一管理器（通用，国产与�
                         [--mode auto|symlink|copy] [--write]
       跨工具部署技能（默认 auto：Windows junction / 其他平台 symlink，失败降级 copy）
   ddswitch usage summary|breakdown|export [--range 24h|7d|30d] [--out <file>]
-      读取本地结构化 usage（ZCode request-level / Codex thread-level）
+      读取本地结构化 usage（ZCode request-level / Codex request-level）
+  ddswitch provider list [--agent <id>]
+      盘点各工具的供应商配置（store profiles + 本地 live）
+  ddswitch provider capture <agent> [--name <名称>]
+      把当前生效的供应商配置捕获为可回滚的 profile
+  ddswitch provider switch <agent> <profileId> [--write]
+      切换供应商（切换前自动回填旧配置的手改；默认 dry-run）
+  ddswitch provider remove <agent> <profileId> [--write]
+      删除一个 profile（生效中的不可删）
 
 工具 id：zcode qoder trae kimi codebuddy workbuddy claude codex gemini opencode
 （国产生态在前、海外主流在后；同一套命令跨任何工具工作）
@@ -59,6 +68,15 @@ export function run(argv, runtimeEnv = defaultEnv()) {
 
   if (cmd === 'scan') return cmdScan(env, adapters);
   if (cmd === 'doctor') return cmdDoctor(env, adapters);
+  if (cmd === 'provider') {
+    const sub2 = sub;
+    if (sub2 === 'list') return cmdProviderList(env, rest);
+    if (sub2 === 'capture') return cmdProviderCapture(env, rest);
+    if (sub2 === 'switch') return cmdProviderSwitch(env, rest);
+    if (sub2 === 'remove') return cmdProviderRemove(env, rest);
+    console.error(`未知子命令：provider ${sub2 ?? '(空)'}\n\n${HELP}`);
+    return 1;
+  }
   if (cmd === 'skills') {
     if (sub === 'list') return cmdSkillsList(env, adapters, rest);
     if (sub === 'deploy') return cmdSkillsDeploy(env, byId, rest);
@@ -96,6 +114,67 @@ function parseFlags(rest) {
     }
   }
   return out;
+}
+
+async function cmdProviderList(env, rest) {
+  const flags = parseFlags(rest);
+  const only = flags.agent ? String(flags.agent).toLowerCase() : null;
+  const rows = listProviders(env, only);
+  let printed = 0;
+  for (const row of rows) {
+    if (!row.caps && row.profiles.length === 0 && row.live.length === 0) continue;
+    console.log(`== ${row.id}（${row.name}）${row.caps?.switch ? '' : '【只读】'}`);
+    console.log(`   profiles: ${row.profiles.length ? row.profiles.map((p) => `${p.id}「${p.name}」${p.id === row.currentProfileId ? ' ← 生效中' : ''}`).join(', ') : '（无，先 provider capture）'}`);
+    for (const l of row.live) {
+      console.log(`   live: ${l.name}${l.enabled === true ? ' [enabled]' : ''}（${l.kind}）`);
+    }
+    if (row.caps && row.caps.switch === false && row.caps.reason) console.log(`   备注: ${row.caps.reason}`);
+    printed++;
+  }
+  if (!printed) console.log('没有支持 provider 管理的工具');
+  return 0;
+}
+
+async function cmdProviderCapture(env, rest) {
+  const [agent, ...restFlags] = rest;
+  const flags = parseFlags(restFlags);
+  if (!agent) { console.error('用法：ddswitch provider capture <agent> [--name <名称>]'); return 1; }
+  try {
+    const { profile, reused } = captureProfile(env, agent.toLowerCase(), flags.name ? String(flags.name) : null);
+    console.log(`${reused ? '已存在相同内容的 profile' : '已捕获'}：${profile.id}「${profile.name}」`);
+    return 0;
+  } catch (e) {
+    console.error(e.message);
+    return 1;
+  }
+}
+
+async function cmdProviderSwitch(env, rest) {
+  const [agent, profileId, ...restFlags] = rest;
+  const flags = parseFlags(restFlags);
+  if (!agent || !profileId) { console.error('用法：ddswitch provider switch <agent> <profileId> [--write]'); return 1; }
+  try {
+    const { lines } = switchProvider(env, agent.toLowerCase(), profileId, { write: flags.write === true });
+    lines.forEach((l) => console.log(l));
+    return 0;
+  } catch (e) {
+    console.error(e.message);
+    return 1;
+  }
+}
+
+async function cmdProviderRemove(env, rest) {
+  const [agent, profileId, ...restFlags] = rest;
+  const flags = parseFlags(restFlags);
+  if (!agent || !profileId) { console.error('用法：ddswitch provider remove <agent> <profileId> [--write]'); return 1; }
+  try {
+    const removed = removeProfile(env, agent.toLowerCase(), profileId, { write: flags.write === true });
+    console.log(`${flags.write === true ? '✓ 已删除' : '· 将删除'}「${removed.name}」(${profileId})`);
+    return 0;
+  } catch (e) {
+    console.error(e.message);
+    return 1;
+  }
 }
 
 async function cmdUsage(env, rest) {

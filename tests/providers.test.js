@@ -100,6 +100,13 @@ test('provider：ZCode 盘点可用但切换被禁写', () => {
   assert.equal(rows[0].live.length, 2);
   assert.equal(rows[0].live.find((l) => l.id === 'builtin:bigmodel-start-plan').enabled, true);
 
+  // 清单快照必须脱敏：不得把 apiKey 复制到 store
+  const snap = captureProfile(ENV(home), 'zcode', 'ZCode 清单');
+  const stored = JSON.stringify(snap.profile.config);
+  assert.ok(!stored.includes('"x"') && !stored.includes('"y"'), '快照不得包含原始 apiKey');
+  assert.equal(snap.profile.config.kind, 'zcode-provider-inventory');
+  assert.equal(snap.profile.config.providers['uuid-1'].kind, 'openai-compatible');
+
   fs.mkdirSync(path.join(home, '.ddswitch'), { recursive: true });
   fs.writeFileSync(path.join(home, '.ddswitch', 'providers.json'), JSON.stringify({ version: 1, agents: { zcode: { currentProfileId: null, profiles: [{ id: 'z1', name: 'x', createdAt: '', config: {} }] } } }));
   assert.throws(() => switchProvider(ENV(home), 'zcode', 'z1', { write: true }), /暂未开放/);

@@ -95,7 +95,7 @@ ddswitch provider switch claude <旧profileId> --write # 3. 一条命令回滚
 |---|---|---|
 | Claude Code | ✔ 切换/回填 | `~/.claude/settings.json` 的 `ANTHROPIC_*` env（官方登录时捕获为空 env） |
 | Codex | ✔ 切换/回填 | `config.toml` 的 `model_provider` 指针 + `[model_providers.*]` 段 + 顶层 `model`（本机当前为 ChatGPT 登录无可捕获配置） |
-| ZCode | 盘点/快照只读 | `v2/config.json` 的 provider map + kind（anthropic/openai-compatible）+ enabled 已可盘点；**激活语义含 family/mode**（`setting.json` 的 `modelProviderFamilySelectedKeys` 带 `coding-plan:` 前缀），未确认前禁写 |
+| ZCode | 盘点 + 清单快照（凭据脱敏） | `v2/config.json` 的 provider map 与 kind（anthropic/openai-compatible）可盘点、可留档；**当前选中状态在 ZCode 自己的 Electron localStorage（LevelDB）里，属 App 托管状态**——实测确认（UI 里切到 deepseek 后 config.json/setting.json/local_setting 表/session 表均无变化，变化只出现在渲染层 LevelDB）→ 外部写 LevelDB 会与运行中的 App 抢状态，故切换请在 ZCode UI 内完成 |
 
 ## Token 用量统计
 

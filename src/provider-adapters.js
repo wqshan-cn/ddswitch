@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { readJsonLoose, fileExists, dirExists, atomicWriteJson, atomicWriteText, readText } from './jsonutil.js';
 import { readNamedTable, readTopLevelKey, upsertNamedSegment, upsertTopLevelKey } from './toml-lite.js';
+import { redactMcpDefinition } from './model.js';
 
 /**
  * ProviderAdapter：把「一个供应商配置」投影到工具的 live 文件。
@@ -110,17 +111,28 @@ export function createCodexProviderAdapter() {
 }
 
 /**
- * ZCode：v2/config.json 的 provider map（name/kind/options{apiKey,baseURL}/models/enabled），
- * 激活语义含 family/mode（setting.json 的 modelProviderFamilySelectedKeys 带
- * "coding-plan:" 前缀），静态推断会写坏用户的激活状态 → v1 只读盘点 + 捕获，
- * 禁写；等一次「UI 切换前后 diff」观察确认激活语义后再开放。
+ * ZCode：v2/config.json 的 provider map（name/kind/options{apiKey,baseURL}/models/enabled）。
+ *
+ * 实测结论（2026-09-12，通过「用户在 UI 里切换到 deepseek」前后对比确认）：
+ * - 供应商**定义与凭据**在 `~/.zcode/v2/config.json`（可写）；
+ * - 供应商**当前选中状态不在任何配置文件里**：config.json 无 active/default/current 标记
+ *   （mtime 停在更早日期）、setting.json 无目标 provider 引用、`local_setting` 表只有
+ *   namespace=model 的 reasoningLevel、session 表无模型列；
+ * - 切换动作实际写入的是 Electron 渲染进程 localStorage
+ *   （`%APPDATA%/ZCode/session/Local Storage/leveldb/*.log` 内含目标模型串）。
+ *
+ * 因为渲染层 LevelDB 是 App 托管状态，外部写入会与运行中的 App 抢状态并可能损坏 UI 存储，
+ * 所以 v1 只做盘点 + 凭据快照（备份），切换必须在 ZCode UI 内完成。
  */
 export function createZcodeProviderAdapter() {
   const file = (env) => path.join(env.home, '.zcode', 'v2', 'config.json');
   return {
     id: 'zcode',
     displayName: 'ZCode',
-    caps: { switch: false, reason: '激活语义含 family/mode（modelProviderFamilySelectedKeys 带 coding-plan: 前缀），需 UI 切换观察确认后开放' },
+    caps: {
+      switch: false,
+      reason: '当前选中状态在 ZCode 的 Electron localStorage（LevelDB）里，属 App 托管状态、无受支持的写入路径；config.json 只存供应商定义与凭据。v1 仅盘点与快照备份，切换请在 ZCode UI 内完成',
+    },
     listLive(env) {
       if (!fileExists(file(env))) return [];
       const config = readJsonLoose(file(env));
@@ -134,8 +146,24 @@ export function createZcodeProviderAdapter() {
       if (!fileExists(file(env))) return null;
       const config = readJsonLoose(file(env));
       const map = config.provider || {};
-      const enabled = Object.entries(map).filter(([, v]) => v.enabled === true);
-      return { enabledEntries: enabled.map(([id, v]) => ({ id, entry: v })), note: '快照（含完整 provider 条目）' };
+      // ZCode 无法由外部切换，快照只作盘点留档：脱敏凭据，避免把 apiKey/oauth token
+      // 复制到第二个位置（与项目「默认脱敏」纪律一致；要备份凭据请直接备份 config.json）。
+      const safeMap = {};
+      for (const [id, entry] of Object.entries(map)) {
+        safeMap[id] = {
+          name: entry.name ?? null,
+          kind: entry.kind ?? null,
+          source: entry.source ?? null,
+          enabled: entry.enabled === true,
+          options: redactMcpDefinition(entry.options || {}),
+        };
+      }
+      return {
+        kind: 'zcode-provider-inventory',
+        providers: safeMap,
+        enabledEntries: Object.entries(map).filter(([, v]) => v.enabled === true).map(([id]) => id),
+        note: 'ZCode 供应商清单快照（凭据已脱敏）；当前选中状态在 App 的 localStorage，无法由此切换',
+      };
     },
     writeLive() {
       throw new Error('[zcode] 供应商写入暂未开放：激活语义未确认（inferred 禁写）');

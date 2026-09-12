@@ -109,7 +109,7 @@ async function cmdUsage(env, rest) {
   const now = Date.now();
   const days = range === '24h' ? 1 / 24 : range === '30d' ? 30 : 7;
   const result = await readUsage(env, { start: new Date(now - days * 86400000).toISOString(), end: new Date(now + 1000).toISOString() });
-  const payload = sub === 'breakdown' ? { range, sources: result.sources, breakdown: result.breakdown } : sub === 'export' ? { range, exportedAt: new Date().toISOString(), sources: result.sources, records: result.records } : { range, sources: result.sources, totals: result.totals, timeseries: result.timeseries, breakdown: result.breakdown };
+  const payload = sub === 'breakdown' ? { range, sources: result.sources, semanticsWarning: result.semanticsWarning, breakdown: result.breakdown } : sub === 'export' ? { range, exportedAt: new Date().toISOString(), sources: result.sources, records: result.records } : { range, sources: result.sources, totals: result.totals, semanticsWarning: result.semanticsWarning, timeseries: result.timeseries, breakdown: result.breakdown };
   if (sub === 'export' && flags.out) {
     atomicWriteJson(String(flags.out), payload);
     console.log(`usage 已导出到 ${flags.out}`);

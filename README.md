@@ -143,6 +143,8 @@ Electron 桌面版的“Token 用量”页面提供总量卡片、按日趋势�
 | Kimi CLI | 国产 | ✔ / ✔ | `~/.kimi/mcp.json` | - |
 | CodeBuddy | 国产 | ✔ / 禁写 | VS Code fork 惯例路径（inferred，待社区验证后开放写入） | - |
 | WorkBuddy | 国产 | ✔ / 禁写 | `~/.workbuddy/connectors/default/mcp.json` → `mcpServers`（default connector profile；`connector-states.json` 不纳入） | `skills/`、`memory/`、`IDENTITY.md`/`SOUL.md`/`USER.md` |
+
+**WorkBuddy 写入验证结论（2026-09-12 受控实验）**：退出状态写入测试条目 → 文件完整保留（9 项校验通过）；启动后 WorkBuddy 会**读取并重新序列化**该文件（条目保留）——它是活跃注册表；但连接器 UI（应用市场视图）**不展示**外部条目，展示/生效路径未证实 → 维持禁写。自定义 MCP 的正确入口是 UI 的「自定义连接器」，其存储位置待确认。
 | Claude Code | 海外 | ✔ / ✔ | `~/.claude.json` → `mcpServers`（user scope） | `skills/`、`CLAUDE.md` |
 | Codex | 海外 | ✔ / ✔ | `~/.codex/config.toml` → `[mcp_servers.*]`（toml-lite 段级 splice，注释与其他段逐字保留） | `skills/`、`AGENTS.md` |
 | Gemini CLI | 海外 | ✔ / ✔ | `~/.gemini/settings.json` → `mcpServers` | - |

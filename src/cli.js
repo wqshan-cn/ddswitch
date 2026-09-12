@@ -4,6 +4,7 @@ import { registry, defaultEnv } from './adapters/index.js';
 import { entryId, summarize, redactMcpDefinition } from './model.js';
 import { dirExists, fileExists, readJsonLoose, atomicWriteJson, isRecord } from './jsonutil.js';
 import { listSkillsDir, deploySkills } from './skills.js';
+import { readUsage } from './usage-readers.js';
 
 const HELP = `ddswitch — AI 编程工具统一管理器（通用，国产与海外主流通吃）
 
@@ -29,6 +30,8 @@ const HELP = `ddswitch — AI 编程工具统一管理器（通用，国产与�
   ddswitch skills deploy --from <id> --to <id[,id...]> [--name <n[,n...]>]
                         [--mode auto|symlink|copy] [--write]
       跨工具部署技能（默认 auto：Windows junction / 其他平台 symlink，失败降级 copy）
+  ddswitch usage summary|breakdown|export [--range 24h|7d|30d] [--out <file>]
+      读取本地结构化 usage（ZCode request-level / Codex thread-level）
 
 工具 id：zcode qoder trae kimi codebuddy workbuddy claude codex gemini opencode
 （国产生态在前、海外主流在后；同一套命令跨任何工具工作）
@@ -38,6 +41,11 @@ const HELP = `ddswitch — AI 编程工具统一管理器（通用，国产与�
   ddswitch mcp sync --from qoder-export.json --to kimi --write
   ddswitch skills deploy --from zcode --to claude --write
 `;
+
+export async function runAsync(argv, runtimeEnv = defaultEnv()) {
+  if (argv[0] === 'usage') return cmdUsage(runtimeEnv, argv.slice(1));
+  return run(argv, runtimeEnv);
+}
 
 export function run(argv, runtimeEnv = defaultEnv()) {
   const [cmd, sub, ...rest] = argv;
@@ -88,6 +96,27 @@ function parseFlags(rest) {
     }
   }
   return out;
+}
+
+async function cmdUsage(env, rest) {
+  const [sub = 'summary', ...args] = rest;
+  const flags = parseFlags(args);
+  const range = String(flags.range || '7d');
+  if (!['24h', '7d', '30d'].includes(range)) {
+    console.error('usage range 必须是 24h、7d 或 30d');
+    return 1;
+  }
+  const now = Date.now();
+  const days = range === '24h' ? 1 / 24 : range === '30d' ? 30 : 7;
+  const result = await readUsage(env, { start: new Date(now - days * 86400000).toISOString(), end: new Date(now + 1000).toISOString() });
+  const payload = sub === 'breakdown' ? { range, sources: result.sources, breakdown: result.breakdown } : sub === 'export' ? { range, exportedAt: new Date().toISOString(), sources: result.sources, records: result.records } : { range, sources: result.sources, totals: result.totals, timeseries: result.timeseries, breakdown: result.breakdown };
+  if (sub === 'export' && flags.out) {
+    atomicWriteJson(String(flags.out), payload);
+    console.log(`usage 已导出到 ${flags.out}`);
+  } else {
+    console.log(JSON.stringify(payload, null, 2));
+  }
+  return 0;
 }
 
 function cmdScan(env, adapters) {

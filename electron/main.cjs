@@ -8,7 +8,8 @@ async function loadCore() {
     const jsonutil = await import('../src/jsonutil.js');
     const model = await import('../src/model.js');
     const skills = await import('../src/skills.js');
-    core = { ...adapters, ...jsonutil, ...model, ...skills };
+    const usage = await import('../src/usage-readers.js');
+    core = { ...adapters, ...jsonutil, ...model, ...skills, ...usage };
   }
   return core;
 }
@@ -94,9 +95,23 @@ async function skillsDeploy({ from, targets, names, mode = 'auto', write = false
   return { write, results };
 }
 
+async function usageData({ range = '7d' } = {}) {
+  const c = await loadCore();
+  const env = makeEnv(c);
+  const now = Date.now();
+  const days = range === '24h' ? 1 / 24 : range === '30d' ? 30 : 7;
+  return c.readUsage(env, { start: new Date(now - days * 86400000).toISOString(), end: new Date(now + 1000).toISOString() });
+}
+
 async function createWindow() {
   const win = new BrowserWindow({ width: 1180, height: 760, minWidth: 900, minHeight: 600, webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false } });
   win.setTitle('ddswitch');
+  win.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    console.error(`[renderer:${level}] ${sourceId}:${line} ${message}`);
+  });
+  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    console.error(`[renderer-load] ${errorCode} ${errorDescription} ${validatedURL}`);
+  });
   await win.loadFile(path.join(__dirname, 'index.html'));
 }
 
@@ -109,6 +124,7 @@ app.whenReady().then(async () => {
   register('mcp-remove', mcpRemove);
   register('skills-list', ({ id } = {}) => skillsList(id));
   register('skills-deploy', skillsDeploy);
+  register('usage-data', usageData);
   register('open-path', ({ value }) => shell.openPath(value));
   await createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

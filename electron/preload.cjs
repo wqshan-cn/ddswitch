@@ -7,5 +7,6 @@ contextBridge.exposeInMainWorld('ddswitch', {
   mcpRemove: (payload) => ipcRenderer.invoke('mcp-remove', payload),
   skillsList: (id) => ipcRenderer.invoke('skills-list', { id }),
   skillsDeploy: (payload) => ipcRenderer.invoke('skills-deploy', payload),
+  usageData: (range) => ipcRenderer.invoke('usage-data', { range }),
   openPath: (value) => ipcRenderer.invoke('open-path', { value }),
 });

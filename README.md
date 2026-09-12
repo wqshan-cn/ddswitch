@@ -2,7 +2,7 @@
 
 **ddswitch：AI 编程工具统一管理器**（通用于国产与海外主流工具）：**全机扫描盘点 + MCP 跨工具同步 + Skills/记忆资产盘点**。
 
-一个命令扫描出电脑上装了哪些 AI 编程工具、各自有哪些 MCP 服务器/Skills/记忆；一条命令把任意工具的 MCP 配置同步到任意其他工具。解决的核心痛点：每家工具配置格式和路径都不同，配一遍 MCP 要在 N 个工具里重复 N 次。
+一个命令扫描出电脑上装了哪些 AI 编程工具、各自有哪些 MCP 服务器/Skills/记忆；一条命令把任意工具的 MCP 配置同步到任意其他工具；还可以读取本地结构化 usage 做 Token 趋势和模型分组统计。解决的核心痛点：每家工具配置格式和路径都不同，配一遍 MCP 要在 N 个工具里重复 N 次。
 
 ## 与 CC Switch 的关系
 
@@ -42,6 +42,14 @@ npm run desktop
 CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:win
 ```
 
+国内网络建议加镜像，避免 electron-builder 下载资源超时：
+
+```bash
+ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/" \
+ELECTRON_BUILDER_BINARIES_MIRROR="https://npmmirror.com/mirrors/electron-builder-binaries/" \
+CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:win
+```
+
 本地构建产物位于 `dist-desktop/`。当前包使用 Electron 默认图标和未配置发布证书，正式发布前应补自有图标和代码签名证书；同时建议在安装器首次启动时提供数据目录备份提示。
 
 ## 快速开始
@@ -59,9 +67,27 @@ node bin/ddswitch.js mcp remove qoder GitHub --write             # 删除某工�
 node bin/ddswitch.js mcp export --agent zcode --out mcp.json     # 导出为统一 JSON
 node bin/ddswitch.js skills list                                 # 技能盘点（含链接拓扑）
 node bin/ddswitch.js skills deploy --from zcode --to claude --write  # 跨工具部署技能
+ddswitch usage summary --range 7d                         # Token 汇总
+ddswitch usage breakdown --range 30d                      # 按来源/模型分组
+ddswitch usage export --range 30d --out usage.json       # 安全字段导出
 ```
 
 同步是**跨阵营**的：Qoder → ZCode、Qoder → Claude、Claude → Kimi……任意方向组合都走同一条命令。
+
+## Token 用量统计
+
+`ddswitch` 的 Token 统计只读取本地结构化数据库，不读取 prompt、会话正文、凭据、headers 或 raw usage JSON。
+
+| 来源 | 粒度 | 数据源 | 状态 |
+|---|---|---|---|
+| ZCode | request-level | `~/.zcode/cli/db/db.sqlite` 的 `model_usage` | 支持输入/输出/reasoning/cache、模型、provider、耗时、失败数 |
+| Codex | thread-level | `~/.codex/state_5.sqlite` 的 `threads` | 只有 thread 总量，界面会明确标注粒度 |
+| Claude Code | - | 暂无可靠结构化 usage 源 | 不猜测、不读取 `.claude/profiles/.history` |
+| WorkBuddy | - | 不读取 SQLite/connector 状态层 | 保持只读 |
+
+聚合规则：成功请求计入消耗；`provider_total_tokens` 优先于 `computed_total_tokens`，不会相加；重复的 `logical_request_id + attempt_index` 去重；缺失值保持未知，不强制变成 0。统计不是官方账单。
+
+Electron 桌面版的“Token 用量”页面提供总量卡片、按日趋势、来源/模型分组；CLI 提供 `usage summary`、`usage breakdown` 和安全字段 `usage export`。
 
 ## 平台支持与检测置信度
 
@@ -109,6 +135,8 @@ src/model.js             McpEntry 摘要、报告模型、大小写规范 id
 src/jsonutil.js          原子写（JSON/文本）+ 备份、嵌套路径 get/ensure、JSONC 兜底解析
 src/toml-lite.js         Codex TOML 段级解析与 splice（绝不整体重排，保注释）
 src/skills.js            Skills 盘点与跨工具部署（junction/symlink/copy，失败降级）
+src/usage-model.js       UsageRecord、token 聚合、按日/模型统计
+src/usage-readers.js     ZCode request-level / Codex thread-level 只读 reader
 src/adapters/
   index.js               注册表（10 个适配器）+ defaultEnv 路径解析
   jsonfamily.js          同构 JSON 家族工厂（新增同构工具 ≈ 20 行 spec）
